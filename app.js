@@ -1116,6 +1116,66 @@ const app = {
         return 'Altro';
     },
 
+    // intelligenza Artificiale (come prima)
+    guessDepartment(ingredientStr) {
+        const str = ingredientStr.toLowerCase();
+        if (/mela|pera|banana|frutta|limon|aranc|fragol|pomodor|cipoll|agli|patat|carot|verdura|insalat|zucchine|melanzan|peperon/i.test(str)) return 'Ortofrutta';
+        if (/carne|pollo|manzo|maiale|vitello|pesce|tonno|salmone|gamber|salum|prosciut|pancetta|salsiccia/i.test(str)) return 'Carne e Pesce';
+        if (/latte|burro|formaggi|uov|uovo|panna|mozzarella|parmigiano|grana|pecorino|mascarpone|ricotta/i.test(str)) return 'Latticini e Uova';
+        if (/farina|zucchero|sale|pepe|olio|aceto|pasta|riso|biscotti|pane|lievito|caff|cacao|vaniglia|cioccolato/i.test(str)) return 'Dispensa';
+        if (/surgelat|gelato|piselli|spinaci surgelati/i.test(str)) return 'Surgelati';
+        if (/acqua|vino|birra|succo|bibita|liquore/i.test(str)) return 'Bevande';
+        return 'Altro';
+    },
+
+    // ==========================================
+    // FUNZIONE MANCANTE RIPRISTINATA QUI SOTTO
+    // ==========================================
+    async importIngredientsToShopping() {
+        const recipe = this.recipes.find(r => r.id === this.viewingRecipeId);
+        if (!recipe || !recipe.ingredients) return this.showAlert('Attenzione', 'Questa ricetta non ha ingredienti.');
+
+        const items = recipe.ingredients.split('\n').filter(i => i.trim() !== '');
+
+        let addedCount = 0;
+        let skippedCount = 0;
+
+        items.forEach(item => {
+            const cleanName = item.trim().replace(/^-\s*/, '');
+
+            // Controllo Anti-Duplicato silenzioso per l'importazione multipla
+            if (this.shoppingList.some(i => i.name.toLowerCase() === cleanName.toLowerCase())) {
+                skippedCount++;
+                return; // Salta al prossimo ingrediente
+            }
+
+            // Ricerca nel Database per importare foto, prezzo e reparto corretti
+            const dbMatch = this.productsDB.find(p => p.name.toLowerCase() === cleanName.toLowerCase());
+
+            this.shoppingList.push({
+                id: 'shop_' + Date.now() + Math.random(),
+                name: cleanName,
+                department: dbMatch ? dbMatch.department : this.guessDepartment(cleanName),
+                price: dbMatch ? dbMatch.price : 0,
+                qty: '',
+                notes: '',
+                image: dbMatch ? dbMatch.image : null,
+                checked: false
+            });
+            addedCount++;
+        });
+
+        await this.saveData();
+
+        // Messaggio di conferma intelligente
+        let msg = `Sono stati aggiunti ${addedCount} ingredienti di "${recipe.title}" alla lista della spesa.`;
+        if (skippedCount > 0) {
+            msg += `<br><br><span class="text-xs text-slate-400">(Altri ${skippedCount} erano già presenti e sono stati saltati per evitare doppioni).</span>`;
+        }
+
+        this.showAlert('Spesa Pronta!', msg, 'fa-cart-shopping', 'emerald');
+    },
+
 };
 
 window.onload = () => app.init();
