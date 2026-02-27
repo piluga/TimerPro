@@ -21,11 +21,31 @@ const app = {
     audioCtx: null,
 
     async init() {
+        // --- SERVICE WORKER & AGGIORNAMENTI ---
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                console.log('✅ SW Registrato');
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        // Se c'è un aggiornamento pronto, mostra il modale!
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            setTimeout(() => {
+                                const updateModal = document.getElementById('modal-app-updated');
+                                if (updateModal) {
+                                    updateModal.classList.remove('hidden');
+                                    updateModal.style.display = 'flex';
+                                }
+                            }, 500);
+                        }
+                    });
+                });
+            }).catch(err => console.error('❌ Errore SW:', err));
         }
+        // --------------------------------------
 
         const savedData = await idbKeyval.get('timerpro_data');
+
         if (savedData) {
             this.timers = savedData.timers || [];
             this.recipes = savedData.recipes || [];
@@ -756,7 +776,7 @@ const app = {
         container.innerHTML = '';
 
         if (this.shoppingList.length === 0) {
-            container.innerHTML = `<div class="text-center text-slate-400 py-10 italic">La tua lista della spesa è vuota. Usa la barra in alto per cercare o aggiungere prodotti.</div>`;
+            container.innerHTML = `<div class="text-center text-slate-400 py-10 italic">La tua lista della spesa è vuota. Usa la barra in basso per cercare o aggiungere prodotti.</div>`;
             return;
         }
 
@@ -766,22 +786,27 @@ const app = {
             let items = this.shoppingList.filter(i => i.department === dept);
             if (items.length === 0) return;
 
+            // Ordina: prima quelli da comprare, poi quelli già comprati
             items.sort((a, b) => (a.checked === b.checked) ? 0 : a.checked ? 1 : -1);
 
             const html = `
-                <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden">
+                <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden mb-6">
                     <div class="bg-slate-50 px-4 py-2 border-b border-slate-100 font-bold text-slate-600 text-sm flex items-center justify-between">
                         ${this.getDeptIcon(dept)} ${dept}
                         <span class="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">${items.length}</span>
                     </div>
                     <div class="divide-y divide-slate-100">
                         ${items.map(item => {
-                const priceHtml = item.price > 0 ? `<span class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 rounded ml-2 border border-emerald-100">€${item.price.toFixed(2)}</span>` : '';
+                // RIGA 2: Prezzo (formattato con la virgola, es. € 1,50)
+                const priceHtml = item.price > 0 ? `<span class="text-xs font-bold text-emerald-600 mt-0.5">€ ${item.price.toFixed(2).replace('.', ',')}</span>` : '';
 
-                // 1. Badge Quantità spostato a destra
+                // RIGA 3: Nota pulita senza icona
+                const noteHtml = item.notes ? `<p class="text-[10px] text-slate-500 mt-0.5 truncate">${item.notes}</p>` : '';
+
+                // Badge Quantità (Rosso/Bianco a destra)
                 const qtyBadge = item.qty ? `<span class="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 shadow-sm">${item.qty}</span>` : '';
 
-                // 2. Bottone Icona Foto (invece dell'anteprima)
+                // Bottone Icona Foto
                 const imgBtn = item.image ? `<button onclick="event.stopPropagation(); app.viewShopImage('${item.id}')" class="text-blue-400 hover:text-blue-600 p-2 shrink-0"><i class="fa-solid fa-image"></i></button>` : '';
 
                 return `
@@ -793,9 +818,10 @@ const app = {
                                     </div>
                                 </div>
                                 
-                                <div class="flex items-center gap-2 flex-1 cursor-pointer py-2 overflow-hidden pl-1" onclick="app.openShoppingEditor('${item.id}')">
-                                    <span class="font-medium truncate ${item.checked ? 'line-through text-slate-400' : 'text-slate-800'}">${item.name}</span>
+                                <div class="flex flex-col justify-center flex-1 cursor-pointer py-2 overflow-hidden pl-2" onclick="app.openShoppingEditor('${item.id}')">
+                                    <span class="font-bold text-sm truncate ${item.checked ? 'line-through text-slate-400' : 'text-slate-800'}">${item.name}</span>
                                     ${priceHtml}
+                                    ${noteHtml}
                                 </div>
                                 
                                 <div class="flex items-center gap-1 shrink-0 pl-2">
@@ -1088,50 +1114,6 @@ const app = {
         if (/surgelat|gelato|piselli|spinaci surgelati/i.test(str)) return 'Surgelati';
         if (/acqua|vino|birra|succo|bibita|liquore/i.test(str)) return 'Bevande';
         return 'Altro';
-    },
-
-    async importIngredientsToShopping() {
-        const recipe = this.recipes.find(r => r.id === this.viewingRecipeId);
-        if (!recipe || !recipe.ingredients) return this.showAlert('Attenzione', 'Questa ricetta non ha ingredienti.');
-
-        const items = recipe.ingredients.split('\n').filter(i => i.trim() !== '');
-
-        let addedCount = 0;
-        let skippedCount = 0;
-
-        items.forEach(item => {
-            const cleanName = item.trim().replace(/^-\s*/, '');
-
-            // 1. Controllo Anti-Duplicato silenzioso per l'importazione multipla
-            if (this.shoppingList.some(i => i.name.toLowerCase() === cleanName.toLowerCase())) {
-                skippedCount++;
-                return; // Salta al prossimo ingrediente
-            }
-
-            const dbMatch = this.productsDB.find(p => p.name.toLowerCase() === cleanName.toLowerCase());
-
-            this.shoppingList.push({
-                id: 'shop_' + Date.now() + Math.random(),
-                name: cleanName,
-                department: dbMatch ? dbMatch.department : this.guessDepartment(cleanName),
-                price: dbMatch ? dbMatch.price : 0,
-                qty: '',
-                notes: '',
-                image: dbMatch ? dbMatch.image : null,
-                checked: false
-            });
-            addedCount++;
-        });
-
-        await this.saveData();
-
-        // Creiamo un messaggio dinamico
-        let msg = `Sono stati aggiunti ${addedCount} ingredienti di "${recipe.title}" alla lista della spesa.`;
-        if (skippedCount > 0) {
-            msg += ` (Altri ${skippedCount} erano già presenti e sono stati saltati).`;
-        }
-
-        this.showAlert('Spesa Pronta!', msg, 'fa-cart-shopping', 'emerald');
     },
 
 };
