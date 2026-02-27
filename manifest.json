@@ -1,0 +1,17 @@
+{
+    "name": "TimerPro",
+    "short_name": "TimerPro",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#f8fafc",
+    "theme_color": "#f43f5e",
+    "description": "App per timer da cucina multi-fase",
+    "icons": [
+        {
+            "src": "https://cdn-icons-png.flaticon.com/512/3565/3565403.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
