@@ -1,4 +1,4 @@
-const CACHE_NAME = 'timerpro-cache-v2'; // Cambia questo numero per forzare futuri aggiornamenti agli utenti!
+const CACHE_NAME = 'timerpro-cache-v3';
 
 // Risorse da scaricare e salvare offline
 const urlsToCache = [
@@ -69,3 +69,4 @@ self.addEventListener('fetch', event => {
         })
     );
 });
+
